@@ -1,0 +1,1257 @@
+---
+author: "Anıl İsmet AŞCI"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+# libraries ---------------------------------------------------------------------------------------------------
+
+if (!require(rvest)) install.packages('rvest')
+if (!require(ggplot2)) install.packages('ggplot2')
+if (!require(mice)) install.packages('mice')
+if (!require(countrycode)) install.packages('countrycode')
+if (!require(data.table)) install.packages('data.table')
+if (!require(rgdal)) install.packages('rgdal')
+if (!require(plotly)) install.packages('plotly')
+if (!require(rgdal)) install.packages('rgdal')
+if (!require(dplyr)) install.packages('dplyr')
+if (!require(plotly)) install.packages('plotly')
+
+
+library(rgdal)
+library(rvest)
+library(ggplot2)
+library(mice)
+library(countrycode)
+library(data.table)
+library(plotly)
+library(dplyr)
+library(rgdal)
+library(plotly)
+
+# data --------------------------------------------------------------------------------------------------------
+
+#Life expectancy source
+url<- c("https://en.wikipedia.org/wiki/List_of_countries_by_life_expectancy")
+fp <- read_html(url)
+str(fp)
+
+
+##required html class for table
+tables<- html_nodes(fp, ".mw-datatable")
+class(tables)
+
+## assigning tables to individual table, table 1 creates problem so do not assign it
+
+for (x in c(2:length(tables))) {
+  assign(paste0("table",x), html_table(tables[x], header = T, dec = ".", fill=TRUE), envir = .GlobalEnv)
+}
+
+## To names data according to institutions rerun the tables and look at the datatable names
+tables
+
+
+## Tables and their content
+WHO2015<-table2[[1]]
+UN2015 <- table3[[1]]
+GBD2010 <- table4[[1]]
+CIA2017 <- table5[[1]]
+OECD2016 <- table6[[1]]
+
+
+## I will choose CIA2017 since it has the max. elements and it is rather new
+str(CIA2017)
+class(CIA2017)
+setDT(CIA2017)
+setorder(CIA2017,"Country")
+## Check for NA
+md.pattern(CIA2017)
+CIA2017 <- na.omit(CIA2017)
+md.pattern(CIA2017)
+
+
+
+CIA2017[, difference := Female-Male]
+
+## Graph the CIA2017
+names(CIA2017)
+
+
+ggplot(CIA2017, aes(x=Male,y=Female,colour= Country))+geom_point()+theme(legend.position = "none")+
+  stat_smooth(method = 'lm', aes(colour = 'linear'), se = FALSE)
+
+
+
+
+# Education index source
+
+url2<- c("https://en.wikipedia.org/wiki/Education_Index")
+fp2 <- read_html(url2)
+str(fp2)
+fp2
+
+## required html class for table
+tables2<- html_nodes(fp2, ".wikitable")
+class(tables2)
+tables2
+
+
+
+## Assigning table to required table
+
+for (x in c(1:length(tables2))) {
+  assign(paste0("table2",x), html_table(tables2[x], header = T, dec = ".", fill=TRUE), envir = .GlobalEnv)
+}
+
+## Since there is only one table that we could use. I choosed that
+data21 <- table21[[1]]
+##  names in data21
+names(data21)
+## re-name it as edu and do the neccesary work
+edu <- data21
+nrow(edu)
+class(edu)
+edu<- data.table(edu)
+setorder(edu,Country)
+
+## Check for NA
+md.pattern(edu)
+
+
+## Graph the CIA2017
+names(edu)
+
+### rename the columns for ease
+
+colnames(edu) <- c("Rank",
+                   "Country",
+                   "EduIndex",
+                   "ExpSch",
+                   "MSch",
+                   "HDI",
+                   "Continent")
+
+
+ggplot(edu, aes(x=ExpSch,y=MSch,colour= Country))+geom_point()+theme(legend.position = "none")+
+  stat_smooth(method = 'lm', aes(colour = 'linear'), se = FALSE)
+
+
+## Combining two datasets
+
+
+nrow(CIA2017)-nrow(edu)
+#### There are extra countries in CIA2017 datatable. 
+#### Let's check if country names are same for both  datatables
+
+educ <- edu$Country
+ciac <- CIA2017$Country
+
+
+a <- c()
+b <- c()
+
+
+### Countries in edu but not in CIA
+for (x in educ){
+  if (sum(x == CIA2017$Country) == 0) {
+    a[x] <- x
+  }
+  
+}
+a
+
+### Countries in CIA but not in edu
+  
+for (x in ciac){
+  if (sum(x == edu$Country) == 0) {
+   b[x] <- x
+  
+  }
+  
+}
+
+b
+
+
+length(a)
+length(b)
+
+length(b)-length(a)
+
+#### There are 19 countries both exists in two datasets but named differently,
+#### We had also found the 36 countries not exists in edu. 
+#### By using countrycode package lets add iso codes of countries then merge it
+
+edu[, iso2c := countrycode(Country, origin ='country.name', destination ='iso2c')]
+CIA2017[, iso2c := countrycode(Country, origin ='country.name', destination ='iso2c')]
+edu<-na.omit(edu)
+CIA2017<- na.omit(CIA2017)
+datum<-merge(CIA2017,edu , by="iso2c")
+nrow(datum)
+nrow(CIA2017)-36
+
+#### It is similar
+### Lets check if there is any NA
+md.pattern(datum)
+class(datum)
+names(datum)
+
+datum
+
+datum[, Country.y := NULL]
+names(datum)
+colnames(datum)<- c("iso2c" ,
+                    "Country",
+                    "Male",
+                    "Female",
+                    "Both",
+                    "difference",
+                    "difference2",
+                    "Rank",
+                    "EduIndex",
+                    "ExpSch",
+                    "MSch",
+                    "HDI",
+                    "Continent")
+str(datum)
+
+### Let's graph it for test
+ggplot(datum, aes(x=MSch,y=Both,colour= Country))+geom_point()+theme(legend.position = "none")+
+  stat_smooth(method = 'lm', aes(colour = 'linear'), se = FALSE)
+
+datum[,mean(Both), by= Continent]
+
+# theme for graphs ---------------------------------------------------------------------------
+theme_ismetovic<-function (base_size = 12, base_family = "", quon = 0.9){
+  half_line <- base_size/2
+  theme(
+    rect = element_blank(),
+    text = element_text(family = base_family, face = "plain",
+                        colour = "#4D4845", size = base_size,
+                        lineheight = 1,  hjust = 0.5,
+                        vjust = 0.5, angle = 0, 
+                        margin = margin(), debug = FALSE),
+    
+    #plot  
+    plot.background = element_blank(), 
+    plot.title = element_text(face = "bold",size = rel(1.2),hjust = 0, margin = margin(b = half_line )),
+    plot.subtitle = element_text(size= rel(0.9),hjust = 0, margin= margin(b = half_line )),
+    plot.caption = element_text(face = "bold",color = "#4D4845", hjust = 0,  size = rel(0.8), margin = margin(t = half_line) ),
+    #axis  
+    axis.text = element_text(size = rel(quon), colour = "#4D4845"),
+    axis.text.x = element_text(margin = margin(t = 0.8*half_line/2), vjust = 1), 
+    axis.text.y = element_text(margin = margin(r = 0.8*half_line/2), hjust = 1),
+    axis.title = element_text(color =  "#4D4845",size = rel(1),face = "bold"),
+    
+    #legend
+    
+    legend.key.size = unit(2, "line"), 
+    legend.text = element_text(size = rel(0.9), color = "#4D4845" ),
+    legend.title = element_text(hjust = 0, color ="#4D4845" , size = rel(0.9),face = "bold"), 
+    legend.position = "top",
+    legend.title.align = 0  , 
+    legend.direction = "horizontal",
+    legend.justification = c(0,0), 
+    
+    #panel  
+    panel.background = element_blank(),
+    panel.grid.major.y = element_line(color="#F2E5DA", size = 0.2),
+    panel.margin.y = NULL, panel.ontop = FALSE, 
+    
+    #strip in case of facet_wrap    
+    strip.background = element_rect(fill="white"),
+    strip.text = element_text(colour = "#4D4845", size = rel(0.8)),
+    
+    complete = TRUE)
+}
+
+
+# Graphs for data -------------------------------------------------------------------------------------
+
+
+a1 <- ggplot(datum,aes(x=MSch,y=Both))+
+  geom_point()+
+  geom_smooth(method=lm , color="red", se=FALSE)+
+  theme_ismetovic()+
+  labs(title = "Schooling and Expected Life from Birth",
+       subtitle = "",
+       x = "Mean years of schooling", y = "Expected life from birth")
+a1
+
+a2 <- ggplot(datum,aes(x=MSch,y=Both,color= Continent,group=Country))+
+  geom_point()+
+  theme_ismetovic()+
+  labs(title = "Schooling and Expected Life from Birth",
+       subtitle = "",
+       x = "Mean years of schooling", y = "Expected life from birth")
+a2
+ggplotly(a2)
+
+expp<-expression('45'~degree)
+
+a3 <- ggplot(datum,aes(x=Male,y=Female))+
+  geom_point()+
+  geom_abline()+
+  theme_ismetovic()+
+  labs(title = "Expected Life from Birth",
+       subtitle = "",
+       x = "Males", y = "Females")+
+  annotate(geom="text", x=85, y= 90, label=expp,color="black")
+a3
+
+a4 <- ggplot(datum,aes(x=MSch,y=difference,color= Continent,group=Country))+
+  geom_point()+
+  theme_ismetovic()+
+  labs(title = "Expected Life from Birth",
+       subtitle = "Difference between genders",
+       x = "Mean years of schooling", y = "Difference")+
+  geom_hline(yintercept = 0)
+a4
+
+ggplotly(a4)
+
+
+# World Graphs for data---------------------------------------------------------------------------
+#### Geospatial data used is from Erol Taymaz
+
+# Downloading the Map File, data will be avalible as long as the metu 
+
+wa <- readOGR("C:/Users/aiasc/OneDrive - metu.edu.tr/desktop/R","ne_10m_admin_0_countries")
+ 
+# Deleting antartica and creating dataset for further use and testing on graph
+
+wa <- subset(wa, admin!="Antarctica")
+wf <- fortify(wa)
+wa$id <- row.names(wa)
+wf <- dplyr::left_join(wf, wa@data)
+names(wf)
+wf <- data.table(wf)
+wf
+a<-ggplot(wf, aes(long, lat, group = group, fill=gdp_md_est )) + 
+  geom_polygon()
+
+a
+
+### adding life  expectency and education data into wf
+### Each Country have multiple elements due to their shapes
+### Result of that, for one element in datum we need to create as many element as needed
+
+
+############################################################################################
+
+#----------------Attention!. Each one of the variables may require 10 min.----------------#
+
+#----------Please Notify me if you know a shorter way via "aiasci@outlook.com" -----------#
+
+############################################################################################
+
+qw<-wf$iso_a2
+
+# loop for getting Both life, test whether the length of the created list equals number of rows, then add it
+life<-c()
+for (ii in 1:length(qw)) {
+  if (sum(qw[ii] == datum$iso2c) == 1) {
+    result <- datum[iso2c == qw[ii]]$Both
+    life[ii] <- result
+    
+  }
+  else {
+    life[ii] <- 0
+  }
+  
+}
+
+
+length(life)
+nrow(wf)- length(life)
+wf[, life := life]
+
+# loop for getting Female life, test whether the length of the created list equals number of rows, then add it
+flife<-c()
+for (ii in 1:length(qw)) {
+  if (sum(qw[ii] == datum$iso2c) == 1) {
+    result <- datum[iso2c == qw[ii]]$Female
+    flife[ii] <- result
+    
+  }
+  else {
+    flife[ii] <- 0
+  }
+  
+}
+
+length(flife)
+nrow(wf)- length(flife)
+wf[, flife := flife]
+
+# loop for getting Male life, test whether the length of the created list equals number of rows, then add it
+mlife<-c()
+for (ii in 1:length(qw)) {
+  if (sum(qw[ii] == datum$iso2c) == 1) {
+    result <- datum[iso2c == qw[ii]]$Male
+    mlife[ii] <- result
+    
+  }
+  else {
+    mlife[ii] <- 0
+  }
+  
+}
+
+length(mlife)
+nrow(wf)- length(mlife)
+wf[, mlife := mlife]
+
+# loop for getting Expected year of schooling life,  test whether the length of the created list equals number of rows, then add it
+Esch<-c()
+for (ii in 1:length(qw)) {
+  if (sum(qw[ii] == datum$iso2c) == 1) {
+    result <- datum[iso2c == qw[ii]]$ExpSch
+    Esch[ii] <- result
+    
+  }
+  else {
+    Esch[ii] <- 0
+  }
+  
+}
+
+length(Esch)
+nrow(wf)- length(Esch)
+wf[, Esch := Esch]
+
+
+# loop for getting Mean year of schooling life,  test whether the length of the created list equals number of rows, then add it
+Msch<-c()
+for (ii in 1:length(qw)) {
+  if (sum(qw[ii] == datum$iso2c) == 1) {
+    result <- datum[iso2c == qw[ii]]$MSch
+    Msch[ii] <- result
+    
+  }
+  else {
+    Msch[ii] <- 0
+  }
+  
+}
+
+length(Msch)
+nrow(wf)- length(Msch)
+wf[, Msch := Msch]
+
+names(wf)
+
+## Graphs
+
+wf[, lifeg := ifelse(life>=80, "80 \u2265 ",
+                     ifelse(life>=70 & life <80 , "80> \u2265 70",
+                            ifelse(life==0,"No Data" ,       
+                                   ifelse(life>60 & life <70, "70> \u2265 60","60<" ))))]
+
+a11<-ggplot(wf, aes(long, lat, group = group, fill = lifeg)) + 
+  geom_polygon() + 
+  coord_equal(ratio = 1.3, xlim = NULL, ylim = NULL, expand = T)+
+  theme_ismetovic()+
+  theme(axis.title.x=element_blank(),axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+       axis.text.y=element_blank(),axis.ticks.y=element_blank(),legend.title = element_blank())+
+  scale_fill_manual(values = c("#bdc9e1","#74a9cf","#2b8cbe","#045a8d","#f1eef6"))+
+  labs(title = "Expected life from Birth",
+       subtitle = "CIA Factbook 2017")
+
+wf[, mschg := ifelse(Msch>=11, "11 \u2265 ",
+                     ifelse(Msch>=8 & Msch <11 , "11> \u2265 8",
+                            ifelse(Msch==0,"No Data" ,       
+                                   ifelse(Msch>80 & Msch <5, "8> \u2265 5","5<" ))))]
+
+a12<-ggplot(wf, aes(long, lat, group = group, fill = mschg)) + 
+  geom_polygon() + 
+  coord_equal(ratio = 1.3, xlim = NULL, ylim = NULL, expand = T)+
+  theme_ismetovic()+
+  theme(axis.title.x=element_blank(),axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),axis.ticks.y=element_blank(),legend.title = element_blank())+
+  scale_fill_manual(values = c("#d7301f","#fc8d59","#fdcc8a","#fef0d9"))+
+  labs(title = "Mean years of Education",
+       subtitle = "for People ages 25 and over")
+
+
+wf[, eschg := ifelse(Esch>=16, "16 \u2265 ",
+                     ifelse(Esch>=12 & Esch <16 , "16> \u2265 12",
+                            ifelse(Msch==0,"No Data" ,       
+                                   ifelse(Esch>=8& Esch <12, "12> \u2265 8 ","8<" ))))]
+
+a13<-ggplot(wf, aes(long, lat, group = group, fill = eschg)) + 
+  geom_polygon() + 
+  coord_equal(ratio = 1.3, xlim = NULL, ylim = NULL, expand = T)+
+  theme_ismetovic()+
+  theme(axis.title.x=element_blank(),axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),axis.ticks.y=element_blank(),legend.title = element_blank())+
+  scale_fill_manual(values = c("#f768a1","#7a0177","#c51b8a","#fbb4b9","#feebe2"))+
+  labs(title = "Expected years of Education",
+       subtitle = "for People under 18")
+
+
+# Lets Arrange them for tables ------------------------------------------------------------------------------------
+
+datum_m <- datum[,c(1:3,12)]
+datum_f <- datum[,c(1:2,4,12)]
+datum_b <- datum[,c(1:2,5,12)]
+datum_diff <- datum[,c(1:2,6,12)]
+datum_eduindex <- datum[,c(1:2,8,12)]
+datum_expsch <- datum[,c(1:2,9,12)]
+datum_msch <- datum[,c(1:2,10,12)]
+
+
+datum_m[, tip := rep("Expected life from birth for Males", nrow(datum_m))]
+datum_f[, tip := rep("Expected life from birth for Females", nrow(datum_f))]
+datum_diff[, tip := rep("Difference between Females and Males", nrow(datum_diff))]
+datum_b[, tip := rep("Expected life from birth", nrow(datum_b))]
+datum_msch[, tip := rep("Mean years of schooling", nrow(datum_msch))]
+datum_expsch[, tip := rep("Expected years of schooling", nrow(datum_expsch))]
+datum_eduindex[, tip := rep("Education Index", nrow(datum_eduindex))]
+
+colnamesaremess <- c("iso2c","Country","Result","Continent","tip")
+colnames(datum_m) <- colnamesaremess
+colnames(datum_f) <- colnamesaremess
+colnames(datum_b) <- colnamesaremess
+colnames(datum_diff) <- colnamesaremess
+colnames(datum_msch) <- colnamesaremess
+colnames(datum_expsch) <- colnamesaremess
+colnames(datum_eduindex) <- colnamesaremess
+
+setorder(datum_m, -Result)
+setorder(datum_f, -Result)
+setorder(datum_b, -Result)
+setorder(datum_diff, -Result)
+datum_diff$Result <- round(datum_diff$Result,2)
+setorder(datum_msch, -Result)
+setorder(datum_expsch, -Result)
+setorder(datum_eduindex, -Result)
+
+datum_life <- rbind(datum_m,datum_f,datum_b)
+
+
+datum_edu <- rbind(datum_expsch,datum_msch)
+
+datum_diff 
+
+datum_eduindex
+
+# For general statistics part these codes will create the tables.
+
+DT::datatable(datum_b)
+DT::datatable(datum_f)
+DT::datatable(datum_m)
+DT::datatable(datum_diff)
+DT::datatable(datum_msch)
+DT::datatable(datum_expsch)
+DT::datatable(datum_eduindex)
+
+
+
+
+```
+
+
+# Life expectancy and education
+<div style="text-align: justify;font-size: 15px;">  
+It is a known fact that education and life expectancy are positively correlated since with the education, productivity and corollary income of the population increases. Also, higher years of education decreases criminality. Thus the increase in the years' of compulsory education eventually has a positive effect on the life expectancy.
+</div> 
+<br>
+<div style="text-align: justify;font-size: 15px;">  
+For this homework, I scrap data from Wikipedia's [Life Expectancy](https://en.wikipedia.org/wiki/List_of_countries_by_life_expectancy) and [Education Index](https://en.wikipedia.org/wiki/Education_Index) via required R packages. I used the CIA's 2017 Life Expectancy data and 2016 Human Development Report's Education Index embedded in the website. These data sets do not have a time series; thus, I will only make comparisons. For further examination, tables below can be used. 
+</div> 
+<br>
+<div style="text-align: justify;font-size: 15px;">  
+Lastly data for maps is taken from Erol Taymaz.
+</div> 
+
+## Graphs {.tabset}
+### Schooling on Life Expectancy {.tabset .tabset-fade}
+<div style="text-align: justify;font-size: 15px;">  
+It is obvious that mean year of schooling for people ages 25 and older is positively correlated with life expectancy.
+</div> 
+```{r echo=FALSE, warning=FALSE ,message=FALSE, out.width= '120%'}
+a1
+```
+
+### Schooling on Life Expectancy (interactive) {.tabset .tabset-fade}
+<div style="text-align: justify;font-size: 15px;">  
+Again as expected countries are underdeveloped, in war and experienced recent disasters are at the bottom-left of the table while the so-called prosperous ones are at the top-right. 
+</div> 
+```{r echo=FALSE, warning=FALSE ,message=FALSE, out.width= '120%'}
+ggplotly(a2)
+```
+
+### Male-Female difference {.tabset .tabset-fade}
+<div style="text-align: justify;font-size: 15px;">  
+Also, females expected to live longer. 
+</div> 
+```{r echo=FALSE, warning=FALSE ,message=FALSE, out.width= '120%'}
+a3
+```
+
+### Difference (interactive) {.tabset .tabset-fade}
+<div style="text-align: justify;font-size: 15px;">  
+The expected years of living difference between genders shows that old USSR countries absurdly on the top while in Eswatini males expected to live 1.2 years more than females. 
+</div> 
+
+```{r echo=FALSE, warning=FALSE , message=FALSE, out.width= '120%'}
+ggplotly(a4)
+```
+
+
+
+## Global Graphs {.tabset}
+I do not include plotly based graphs due to high system requirement needs which my computer do not have. Instead, non-interactive plots will be shown.
+
+### Life Expectancy {.tabset .tabset-fade}
+
+```{r echo=F,  out.width= '120%'}
+
+ggplotly(a11)
+
+```
+
+### Mean Years of Education {.tabset .tabset-fade}
+
+```{r echo=F, out.width= '120%'}
+ggplotly(a12)
+```
+
+
+### Expected Years of Education {.tabset .tabset-fade}
+
+```{r echo=F, out.width= '120%'}
+ggplotly(a13)
+```
+
+
+## General Statistics {.tabset}
+
+
+
+### Expected Lifes from Birth {.tabset .tabset-fade}
+#### All {.tabset .tabset-fade}
+```{r echo=F}
+
+DT::datatable(datum_b)
+
+```
+
+#### Females {.tabset .tabset-fade}
+```{r echo=F}
+
+DT::datatable(datum_f)
+
+```
+
+#### Males {.tabset .tabset-fade}
+```{r echo=F}
+
+DT::datatable(datum_m)
+
+```
+
+#### Difference {.tabset .tabset-fade}
+```{r echo=F}
+
+DT::datatable(datum_diff)
+
+```
+
+### Education {.tabset .tabset-fade}
+
+#### Mean Years {.tabset .tabset-fade}
+```{r echo=F}
+
+DT::datatable(datum_msch)
+
+```
+
+#### Expected Years {.tabset .tabset-fade}
+```{r echo=F}
+
+DT::datatable(datum_expsch)
+
+```
+
+#### Education Index{.tabset .tabset-fade}
+```{r echo=F}
+
+DT::datatable(datum_eduindex)
+
+```
+
+
+
+## Appendix
+
+```{r eval=FALSE, warning=FALSE, message= FALSE}
+# libraries ---------------------------------------------------------------------------------------------------
+
+if (!require(rvest)) install.packages('rvest')
+if (!require(ggplot2)) install.packages('ggplot2')
+if (!require(mice)) install.packages('mice')
+if (!require(countrycode)) install.packages('countrycode')
+if (!require(data.table)) install.packages('data.table')
+if (!require(rgdal)) install.packages('rgdal')
+if (!require(plotly)) install.packages('plotly')
+if (!require(rgdal)) install.packages('rgdal')
+if (!require(dplyr)) install.packages('dplyr')
+
+
+
+library(rgdal)
+library(rvest)
+library(ggplot2)
+library(mice)
+library(countrycode)
+library(data.table)
+library(plotly)
+library(dplyr)
+library(rgdal)
+
+# data --------------------------------------------------------------------------------------------------------
+
+#Life expectancy source
+url<- c("https://en.wikipedia.org/wiki/List_of_countries_by_life_expectancy")
+fp <- read_html(url)
+str(fp)
+
+
+##required html class for table
+tables<- html_nodes(fp, ".mw-datatable")
+class(tables)
+
+## assigning tables to individual table, table 1 creates problem so do not assign it
+
+for (x in c(2:length(tables))) {
+  assign(paste0("table",x), html_table(tables[x], header = T, dec = ".", fill=TRUE), envir = .GlobalEnv)
+}
+
+## To names data according to institutions rerun the tables and look at the datatable names
+tables
+
+
+## Tables and their content
+WHO2015<-table2[[1]]
+UN2015 <- table3[[1]]
+GBD2010 <- table4[[1]]
+CIA2017 <- table5[[1]]
+OECD2016 <- table6[[1]]
+
+tablelist <- list(WHO2015,UN2015,GBD2010,CIA2017,OECD2016)
+
+## names in datatables
+lapply(tablelist, names)
+
+
+## setting order for datatables
+for (x in tablelist) {
+  setorder(x,Country)
+}
+
+## nrows for datatables
+lapply(tablelist, nrow)
+
+## I will choose CIA2017 since it has the max. elements and it is rather new
+str(CIA2017)
+class(CIA2017)
+CIA2017<- data.table(CIA2017)
+
+## Check for NA
+md.pattern(CIA2017)
+CIA2017 <- na.omit(CIA2017)
+md.pattern(CIA2017)
+
+
+
+CIA2017[, difference := Female-Male]
+
+## Graph the CIA2017
+names(CIA2017)
+
+
+ggplot(CIA2017, aes(x=Male,y=Female,colour= Country))+geom_point()+theme(legend.position = "none")+
+  stat_smooth(method = 'lm', aes(colour = 'linear'), se = FALSE)
+
+
+
+
+# Education index source
+
+url2<- c("https://en.wikipedia.org/wiki/Education_Index")
+fp2 <- read_html(url2)
+str(fp2)
+fp2
+
+## required html class for table
+tables2<- html_nodes(fp2, ".wikitable")
+class(tables2)
+tables2
+
+
+
+## Assigning table to required table
+
+for (x in c(1:length(tables2))) {
+  assign(paste0("table2",x), html_table(tables2[x], header = T, dec = ".", fill=TRUE), envir = .GlobalEnv)
+}
+
+## Since there is only one table that we could use. I choosed that
+data21 <- table21[[1]]
+##  names in data21
+names(data21)
+## re-name it as edu and do the neccesary work
+edu <- data21
+nrow(edu)
+class(edu)
+edu<- data.table(edu)
+setorder(edu,Country)
+
+## Check for NA
+md.pattern(edu)
+
+
+## Graph the CIA2017
+names(edu)
+
+### rename the columns for ease
+
+colnames(edu) <- c("Rank",
+                   "Country",
+                   "EduIndex",
+                   "ExpSch",
+                   "MSch",
+                   "HDI",
+                   "Continent")
+
+
+ggplot(edu, aes(x=ExpSch,y=MSch,colour= Country))+geom_point()+theme(legend.position = "none")+
+  stat_smooth(method = 'lm', aes(colour = 'linear'), se = FALSE)
+
+
+## Combining two datasets
+
+
+nrow(CIA2017)-nrow(edu)
+#### There are extra countries in CIA2017 datatable. 
+#### Let's check if country names are same for both  datatables
+
+educ <- edu$Country
+ciac <- CIA2017$Country
+
+
+a <- c()
+b <- c()
+
+
+### Countries in edu but not in CIA
+for (x in educ){
+  if (sum(x == CIA2017$Country) == 0) {
+    a[x] <- x
+  }
+  
+}
+a
+
+### Countries in CIA but not in edu
+  
+for (x in ciac){
+  if (sum(x == edu$Country) == 0) {
+   b[x] <- x
+  
+  }
+  
+}
+
+b
+
+
+length(a)
+length(b)
+
+length(b)-length(a)
+
+#### There are 19 countries both exists in two datasets but named differently,
+#### We had also found the 36 countries not exists in edu. 
+#### By using countrycode package lets add iso codes of countries then merge it
+
+edu[, iso2c := countrycode(Country, origin ='country.name', destination ='iso2c')]
+CIA2017[, iso2c := countrycode(Country, origin ='country.name', destination ='iso2c')]
+edu<-na.omit(edu)
+CIA2017<- na.omit(CIA2017)
+datum<-merge(CIA2017,edu , by="iso2c")
+nrow(datum)
+nrow(CIA2017)-36
+
+#### It is similar
+### Lets check if there is any NA
+md.pattern(datum)
+class(datum)
+names(datum)
+
+datum
+
+datum[, Country.y := NULL]
+names(datum)
+colnames(datum)<- c("iso2c" ,
+                    "Country",
+                    "Male",
+                    "Female",
+                    "Both",
+                    "difference",
+                    "Rank",
+                    "EduIndex",
+                    "ExpSch",
+                    "MSch",
+                    "HDI",
+                    "Continent")
+str(datum)
+
+### Let's graph it for test
+ggplot(datum, aes(x=MSch,y=Both,colour= Country))+geom_point()+theme(legend.position = "none")+
+  stat_smooth(method = 'lm', aes(colour = 'linear'), se = FALSE)
+
+datum[,mean(Both), by= Continent]
+
+# theme for graphs ---------------------------------------------------------------------------
+theme_ismetovic<-function (base_size = 12, base_family = "", quon = 0.9){
+  half_line <- base_size/2
+  theme(
+    rect = element_blank(),
+    text = element_text(family = base_family, face = "plain",
+                        colour = "#4D4845", size = base_size,
+                        lineheight = 1,  hjust = 0.5,
+                        vjust = 0.5, angle = 0, 
+                        margin = margin(), debug = FALSE),
+    
+    #plot  
+    plot.background = element_blank(), 
+    plot.title = element_text(face = "bold",size = rel(1.2),hjust = 0, margin = margin(b = half_line )),
+    plot.subtitle = element_text(size= rel(0.9),hjust = 0, margin= margin(b = half_line )),
+    plot.caption = element_text(face = "bold",color = "#4D4845", hjust = 0,  size = rel(0.8), margin = margin(t = half_line) ),
+    #axis  
+    axis.text = element_text(size = rel(quon), colour = "#4D4845"),
+    axis.text.x = element_text(margin = margin(t = 0.8*half_line/2), vjust = 1), 
+    axis.text.y = element_text(margin = margin(r = 0.8*half_line/2), hjust = 1),
+    axis.title = element_text(color =  "#4D4845",size = rel(1),face = "bold"),
+    
+    #legend
+    
+    legend.key.size = unit(2, "line"), 
+    legend.text = element_text(size = rel(0.9), color = "#4D4845" ),
+    legend.title = element_text(hjust = 0, color ="#4D4845" , size = rel(0.9),face = "bold"), 
+    legend.position = "top",
+    legend.title.align = 0  , 
+    legend.direction = "horizontal",
+    legend.justification = c(0,0), 
+    
+    #panel  
+    panel.background = element_blank(),
+    panel.grid.major.y = element_line(color="#F2E5DA", size = 0.2),
+    panel.margin.y = NULL, panel.ontop = FALSE, 
+    
+    #strip in case of facet_wrap    
+    strip.background = element_rect(fill="white"),
+    strip.text = element_text(colour = "#4D4845", size = rel(0.8)),
+    
+    complete = TRUE)
+}
+
+
+# Graphs for data -------------------------------------------------------------------------------------
+
+
+a1 <- ggplot(datum,aes(x=MSch,y=Both))+
+  geom_point()+
+  geom_smooth(method=lm , color="red", se=FALSE)+
+  theme_ismetovic()+
+  labs(title = "Schooling and Expected Life from Birth",
+       subtitle = "",
+       x = "Mean years of schooling", y = "Expected life from birth")
+a1
+
+a2 <- ggplot(datum,aes(x=MSch,y=Both,color= Continent,group=Country))+
+  geom_point()+
+  theme_ismetovic()+
+  labs(title = "Schooling and Expected Life from Birth",
+       subtitle = "",
+       x = "Mean years of schooling", y = "Expected life from birth")
+a2
+ggplotly(a2)
+
+expp<-expression('45'~degree)
+
+a3 <- ggplot(datum,aes(x=Male,y=Female))+
+  geom_point()+
+  geom_abline()+
+  theme_ismetovic()+
+  labs(title = "Expected Life from Birth",
+       subtitle = "",
+       x = "Males", y = "Females")+
+  annotate(geom="text", x=85, y= 90, label=expp,color="black")
+a3
+
+a4 <- ggplot(datum,aes(x=MSch,y=difference,color= Continent,group=Country))+
+  geom_point()+
+  theme_ismetovic()+
+  labs(title = "Expected Life from Birth",
+       subtitle = "Difference between genders",
+       x = "Mean years of schooling", y = "Difference")+
+  geom_hline(yintercept = 0)
+a4
+
+ggplotly(a4)
+
+
+# World Graphs for data---------------------------------------------------------------------------
+#### Geospatial data used is from Erol Taymaz
+
+# Downloading the Map File, data will be avalible as long as the metu 
+download.file("http://users.metu.edu.tr/e214755/map.zip" , destfile=paste0(getwd(), "map.zip") )
+system( paste0("unzip", getwd(), "/map.zip"))
+wa <- readOGR(dsn= paste0(getwd(), "/ne_10m_admin_0_countries.shp"))
+
+# Deleting antartica and creating dataset for further use and testing on graph
+
+wa <- subset(wa, admin!="Antarctica")
+wf <- fortify(wa)
+wa$id <- row.names(wa)
+wf <- dplyr::left_join(wf, wa@data)
+names(wf)
+wf <- data.table(wf)
+wf
+a<-ggplot(wf, aes(long, lat, group = group, fill=gdp_md_est )) + 
+  geom_polygon()
+
+a
+
+### adding life  expectency and education data into wf
+### Each Country have multiple elements due to their shapes
+### Result of that, for one element in datum we need to create as many element as needed
+
+
+############################################################################################
+
+#----------------Attention!. Each one of the variables may require 10 min.----------------#
+
+#----------Please Notify me if you know a shorter way via "aiasci@outlook.com" -----------#
+
+############################################################################################
+
+qw<-wf$iso_a2
+
+# loop for getting Both life, test whether the length of the created list equals number of rows, then add it
+life<-c()
+for (ii in 1:length(qw)) {
+  if (sum(qw[ii] == datum$iso2c) == 1) {
+    result <- datum[iso2c == qw[ii]]$Both
+    life[ii] <- result
+    
+  }
+  else {
+    life[ii] <- 0
+  }
+  
+}
+
+
+length(life)
+nrow(wf)- length(life)
+wf[, life := life]
+
+# loop for getting Female life, test whether the length of the created list equals number of rows, then add it
+flife<-c()
+for (ii in 1:length(qw)) {
+  if (sum(qw[ii] == datum$iso2c) == 1) {
+    result <- datum[iso2c == qw[ii]]$Female
+    flife[ii] <- result
+    
+  }
+  else {
+    flife[ii] <- 0
+  }
+  
+}
+
+length(flife)
+nrow(wf)- length(flife)
+wf[, flife := flife]
+
+# loop for getting Male life, test whether the length of the created list equals number of rows, then add it
+mlife<-c()
+for (ii in 1:length(qw)) {
+  if (sum(qw[ii] == datum$iso2c) == 1) {
+    result <- datum[iso2c == qw[ii]]$Male
+    mlife[ii] <- result
+    
+  }
+  else {
+    mlife[ii] <- 0
+  }
+  
+}
+
+length(mlife)
+nrow(wf)- length(mlife)
+wf[, mlife := mlife]
+
+# loop for getting Expected year of schooling life,  test whether the length of the created list equals number of rows, then add it
+Esch<-c()
+for (ii in 1:length(qw)) {
+  if (sum(qw[ii] == datum$iso2c) == 1) {
+    result <- datum[iso2c == qw[ii]]$ExpSch
+    Esch[ii] <- result
+    
+  }
+  else {
+    Esch[ii] <- 0
+  }
+  
+}
+
+length(Esch)
+nrow(wf)- length(Esch)
+wf[, Esch := Esch]
+
+
+# loop for getting Mean year of schooling life,  test whether the length of the created list equals number of rows, then add it
+Msch<-c()
+for (ii in 1:length(qw)) {
+  if (sum(qw[ii] == datum$iso2c) == 1) {
+    result <- datum[iso2c == qw[ii]]$MSch
+    Msch[ii] <- result
+    
+  }
+  else {
+    Msch[ii] <- 0
+  }
+  
+}
+
+length(Msch)
+nrow(wf)- length(Msch)
+wf[, Msch := Msch]
+
+names(wf)
+
+## Graphs
+
+wf[, lifeg := ifelse(life>=80, "80 \u2265 ",
+                     ifelse(life>=70 & life <80 , "80> \u2265 70",
+                            ifelse(life==0,"No Data" ,       
+                                   ifelse(life>60 & life <70, "70> \u2265 60","60<" ))))]
+
+a11<-ggplot(wf, aes(long, lat, group = group, fill = lifeg)) + 
+  geom_polygon() + 
+  coord_equal(ratio = 1.3, xlim = NULL, ylim = NULL, expand = T)+
+  theme_ismetovic()+
+  theme(axis.title.x=element_blank(),axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+       axis.text.y=element_blank(),axis.ticks.y=element_blank(),legend.title = element_blank())+
+  scale_fill_manual(values = c("#bdc9e1","#74a9cf","#2b8cbe","#045a8d","#f1eef6"))+
+  labs(title = "Expected life from Birth",
+       subtitle = "CIA Factbook 2017")
+
+wf[, mschg := ifelse(Msch>=11, "11 \u2265 ",
+                     ifelse(Msch>=8 & Msch <11 , "11> \u2265 8",
+                            ifelse(Msch==0,"No Data" ,       
+                                   ifelse(Msch>80 & Msch <5, "8> \u2265 5","5<" ))))]
+
+a12<-ggplot(wf, aes(long, lat, group = group, fill = mschg)) + 
+  geom_polygon() + 
+  coord_equal(ratio = 1.3, xlim = NULL, ylim = NULL, expand = T)+
+  theme_ismetovic()+
+  theme(axis.title.x=element_blank(),axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),axis.ticks.y=element_blank(),legend.title = element_blank())+
+  scale_fill_manual(values = c("#d7301f","#fc8d59","#fdcc8a","#fef0d9"))+
+  labs(title = "Mean years of Education",
+       subtitle = "for People ages 25 and over")
+
+
+wf[, eschg := ifelse(Esch>=16, "16 \u2265 ",
+                     ifelse(Esch>=12 & Esch <16 , "16> \u2265 12",
+                            ifelse(Msch==0,"No Data" ,       
+                                   ifelse(Esch>=8& Esch <12, "12> \u2265 8 ","8<" ))))]
+
+a13<-ggplot(wf, aes(long, lat, group = group, fill = eschg)) + 
+  geom_polygon() + 
+  coord_equal(ratio = 1.3, xlim = NULL, ylim = NULL, expand = T)+
+  theme_ismetovic()+
+  theme(axis.title.x=element_blank(),axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),axis.title.y=element_blank(),
+        axis.text.y=element_blank(),axis.ticks.y=element_blank(),legend.title = element_blank())+
+  scale_fill_manual(values = c("#f768a1","#7a0177","#c51b8a","#fbb4b9","#feebe2"))+
+  labs(title = "Expected years of Education",
+       subtitle = "for People under 18")
+
+
+# Lets Arrange them for tables ------------------------------------------------------------------------------------
+
+datum_m <- datum[,c(1:3,12)]
+datum_f <- datum[,c(1:2,4,12)]
+datum_b <- datum[,c(1:2,5,12)]
+datum_diff <- datum[,c(1:2,6,12)]
+datum_eduindex <- datum[,c(1:2,8,12)]
+datum_expsch <- datum[,c(1:2,9,12)]
+datum_msch <- datum[,c(1:2,10,12)]
+
+
+datum_m[, tip := rep("Expected life from birth for Males", nrow(datum_m))]
+datum_f[, tip := rep("Expected life from birth for Females", nrow(datum_f))]
+datum_diff[, tip := rep("Difference between Females and Males", nrow(datum_diff))]
+datum_b[, tip := rep("Expected life from birth", nrow(datum_b))]
+datum_msch[, tip := rep("Mean years of schooling", nrow(datum_msch))]
+datum_expsch[, tip := rep("Expected years of schooling", nrow(datum_expsch))]
+datum_eduindex[, tip := rep("Education Index", nrow(datum_eduindex))]
+
+colnamesaremess <- c("iso2c","Country","Result","Continent","tip")
+colnames(datum_m) <- colnamesaremess
+colnames(datum_f) <- colnamesaremess
+colnames(datum_b) <- colnamesaremess
+colnames(datum_diff) <- colnamesaremess
+colnames(datum_msch) <- colnamesaremess
+colnames(datum_expsch) <- colnamesaremess
+colnames(datum_eduindex) <- colnamesaremess
+
+setorder(datum_m, -Result)
+setorder(datum_f, -Result)
+setorder(datum_b, -Result)
+setorder(datum_diff, -Result)
+datum_diff$Result <- round(datum_diff$Result,2)
+setorder(datum_msch, -Result)
+setorder(datum_expsch, -Result)
+setorder(datum_eduindex, -Result)
+
+datum_life <- rbind(datum_m,datum_f,datum_b)
+
+
+datum_edu <- rbind(datum_expsch,datum_msch)
+
+datum_diff 
+
+datum_eduindex
+
+# For general statistics part these codes will create the tables.
+
+DT::datatable(datum_b)
+DT::datatable(datum_f)
+DT::datatable(datum_m)
+DT::datatable(datum_diff)
+DT::datatable(datum_msch)
+DT::datatable(datum_expsch)
+DT::datatable(datum_eduindex)
+
+
+
+
+
+```
+
+
